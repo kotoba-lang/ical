@@ -120,5 +120,5 @@ day-number algorithm (`days_from_civil` / `civil_from_days` / `weekday_from_days
 ## Test
 
 ```
-clojure -X:test
+clojure -M:test
 ```
