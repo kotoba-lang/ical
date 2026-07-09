@@ -229,6 +229,31 @@
     (is (= {:y 2026 :m 7 :d 15 :hh 10 :mm 0} (last occ))   "last = UNTIL date")))
 
 ;; ---------------------------------------------------------------------------
+;; execute: weekly COUNT is bounded by the true series, not the query window
+;; ---------------------------------------------------------------------------
+
+(deftest weekly-count-window-does-not-extend-series
+  ;; dtstart=2026-01-05 (Mon), FREQ=WEEKLY;BYDAY=MO;COUNT=3
+  ;; → true series: Jan 5, Jan 12, Jan 19 (Jan 26 is NOT part of the series).
+  ;; Querying with a from-dt that excludes the first occurrence must not let
+  ;; the loop run an extra week to compensate.
+  (let [evt (mk-event "ewc-1" {:y 2026 :m 1 :d 5 :hh 9 :mm 0}
+                      {:ical/freq :weekly :ical/byday [:mo] :ical/count 3})
+        wide-occ (ex/occurrences evt {:y 2026 :m 1 :d 1  :hh 0 :mm 0}
+                                      {:y 2026 :m 3 :d 1  :hh 0 :mm 0})
+        narrow-occ (ex/occurrences evt {:y 2026 :m 1 :d 10 :hh 0 :mm 0}
+                                        {:y 2026 :m 3 :d 1  :hh 0 :mm 0})]
+    (is (= [{:y 2026 :m 1 :d  5 :hh 9 :mm 0}
+            {:y 2026 :m 1 :d 12 :hh 9 :mm 0}
+            {:y 2026 :m 1 :d 19 :hh 9 :mm 0}]
+           wide-occ)
+        "full series is exactly COUNT=3 occurrences")
+    (is (= [{:y 2026 :m 1 :d 12 :hh 9 :mm 0}
+            {:y 2026 :m 1 :d 19 :hh 9 :mm 0}]
+           narrow-occ)
+        "from-dt excluding the first occurrence must not emit a phantom Jan 26")))
+
+;; ---------------------------------------------------------------------------
 ;; execute: non-recurring event
 ;; ---------------------------------------------------------------------------
 

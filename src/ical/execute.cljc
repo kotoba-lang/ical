@@ -124,26 +124,31 @@
                    (sort (map byday->mon-offset byday))
                    ;; No BYDAY: use the original weekday
                    [(- start-n base-mon)])]
-    (loop [week 0 acc [] emitted 0]
+    ;; `step` counts true series occurrences (independent of the query
+    ;; window), mirroring expand-daily/expand-monthly's `step`. COUNT must
+    ;; bound the real RRULE series, not how many occurrences happened to
+    ;; land inside [from-n, to-n) -- otherwise a `from-n` that excludes an
+    ;; early occurrence lets the loop run past the true end of the series
+    ;; and emit a phantom extra occurrence to compensate.
+    (loop [week 0 acc [] step 0]
       (let [week-mon (+ base-mon (* week interval 7))]
-        ;; Stop if week-monday is clearly past any bound
-        (if (> week-mon (+ (or until-n to-n) 7))
+        (if (or (and cnt (>= step cnt))
+                (> week-mon (+ (or until-n to-n) 7)))
           acc
-          (let [[acc' emitted']
-                (reduce (fn [[a e] off]
-                          (let [day-n (+ week-mon off)]
-                            (cond
-                              (< day-n start-n)   [a e]           ; before dtstart
-                              (< day-n from-n)    [a e]           ; before query window
-                              (>= day-n to-n)     [a e]           ; past query end
-                              (and until-n (> day-n until-n)) [a e] ; past UNTIL
-                              (and cnt (>= e cnt)) [a e]          ; COUNT reached
-                              :else [(conj a (n->dt day-n hh mm)) (inc e)])))
-                        [acc emitted]
+          (let [[acc' step']
+                (reduce (fn [[a s] off]
+                          (if (and cnt (>= s cnt))
+                            [a s]
+                            (let [day-n (+ week-mon off)]
+                              (cond
+                                (< day-n start-n) [a s]              ; before dtstart: not in series
+                                (and until-n (> day-n until-n)) [a s] ; past UNTIL: not in series
+                                (and (>= day-n from-n) (< day-n to-n))
+                                [(conj a (n->dt day-n hh mm)) (inc s)]
+                                :else [a (inc s)]))))
+                        [acc step]
                         offsets)]
-            (if (and cnt (>= emitted' cnt))
-              acc'
-              (recur (inc week) acc' emitted'))))))))
+            (recur (inc week) acc' step')))))))
 
 (defn- expand-monthly
   [dtstart hh mm interval cnt until-n from-n to-n]
