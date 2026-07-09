@@ -78,6 +78,27 @@
       (is (= :daily (get-in evt [:ical/rrule :ical/freq])) "rrule freq round-trips")
       (is (= 4 (get-in evt [:ical/rrule :ical/count])) "rrule count round-trips"))))
 
+(deftest round-trip-text-with-a-backslash-adjacent-to-an-escape-trigger-char
+  (testing "a literal backslash immediately followed by n/N/;/, must round-trip
+            unchanged -- escape() turning that lone backslash into \\\\ can
+            leave it directly adjacent to the following literal char (e.g.
+            `C:\\notes` -> `C:\\\\notes`), and unescape() must not misread part
+            of that already-escaped pair as a DIFFERENT escape sequence
+            (regression: sequential str/replace passes did exactly that,
+            turning the literal 'n' after an escaped backslash into an
+            actual newline)"
+    (doseq [summary ["Notes: C:\\notes\\file.pdf" "back\\;slash-semicolon-collision"
+                     "back\\,slash-comma-collision" "a\\\\b" "trailing backslash\\"
+                     "\\N literal"]]
+      (let [cal (-> (model/calendar {:prodid "-//test//en" :version "2.0"})
+                    (model/add-event
+                     (model/event "uid-esc-001@test"
+                                  {:summary summary
+                                   :dtstart {:y 2026 :m 8 :d 1 :hh 9 :mm 0}})))
+            parsed (ical/parse-str (ical/emit-str cal))]
+        (is (= summary (:ical/summary (first (:ical/events parsed))))
+            (str "round-trip must preserve " (pr-str summary)))))))
+
 ;; ---------------------------------------------------------------------------
 ;; validate
 ;; ---------------------------------------------------------------------------

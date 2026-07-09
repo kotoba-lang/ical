@@ -67,14 +67,30 @@
 ;; --- value unescaping (RFC 5545 §3.3.11) ---
 
 (defn- unescape
-  "Unescape iCalendar value text sequences."
+  "Unescape iCalendar value text sequences (RFC 5545 §3.3.11) via a single
+  left-to-right scan. Sequential str/replace passes are NOT safe here:
+  `escape` turning a lone backslash into `\\\\` can leave it immediately
+  followed by an unrelated literal `n`/`N`/`;`/`,` (e.g. `C:\notes` ->
+  `C:\\notes`), and a later pass in the chain (matching `\n`) then
+  misreads part of that already-escaped backslash pair as a DIFFERENT
+  escape sequence -- corrupting the text instead of restoring it. A single
+  scan that consumes each two-character escape atomically (never letting
+  one backslash serve double duty across two different replace passes)
+  is the only order-safe inverse of `escape`."
   [s]
-  (-> s
-      (str/replace "\\;" ";")
-      (str/replace "\\," ",")
-      (str/replace "\\n" "\n")
-      (str/replace "\\N" "\n")
-      (str/replace "\\\\" "\\")))
+  (let [n (count s)]
+    (loop [i 0 acc []]
+      (if (>= i n)
+        (apply str acc)
+        (if (and (< (inc i) n) (= "\\" (subs s i (inc i))))
+          (case (subs s i (+ i 2))
+            "\\;" (recur (+ i 2) (conj acc ";"))
+            "\\," (recur (+ i 2) (conj acc ","))
+            "\\n" (recur (+ i 2) (conj acc "\n"))
+            "\\N" (recur (+ i 2) (conj acc "\n"))
+            "\\\\" (recur (+ i 2) (conj acc "\\"))
+            (recur (inc i) (conj acc (subs s i (inc i)))))
+          (recur (inc i) (conj acc (subs s i (inc i)))))))))
 
 ;; --- value escaping (for emit) ---
 
